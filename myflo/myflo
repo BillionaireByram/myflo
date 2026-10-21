@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# Managed by the MyFlo installer. Do not hand-edit; rerun install.sh instead.
+#
+#   myflo              start MyFlo if needed and open it in the browser
+#   myflo start|stop|restart|logs|doctor|update
+#   myflo <anything>   passed to the bundled bb CLI (e.g. myflo project list)
+set -euo pipefail
+
+MYFLO_HOME="${MYFLO_HOME:-$HOME/.myflo}"
+MYFLO_PORT="${MYFLO_PORT:-38896}"
+MYFLO_DAEMON_PORT="${MYFLO_DAEMON_PORT:-38897}"
+MYFLO_REPO="${MYFLO_REPO:-BillionaireByram/myflo}"
+MYFLO_REF="${MYFLO_REF:-myflo}"
+
+export PATH="$MYFLO_HOME/node/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+export BB_DATA_DIR="$MYFLO_HOME/data"
+export BB_SERVER_PORT="$MYFLO_PORT" BB_HOST_DAEMON_PORT="$MYFLO_DAEMON_PORT"
+export BB_SERVER_BIND_HOST=127.0.0.1 BB_TELEMETRY=false
+export BB_SERVER_URL="http://127.0.0.1:$MYFLO_PORT"
+
+DIST="$MYFLO_HOME/app/node_modules/bb-app/dist"
+URL="http://localhost:$MYFLO_PORT"
+LOG="$MYFLO_HOME/logs/myflo.log"
+
+die() { echo "myflo: $*" >&2; exit 1; }
+[[ -f "$DIST/bb-app.js" ]] || die "not installed under $MYFLO_HOME; run the MyFlo installer"
+
+running() {
+  [[ $(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "$URL/" || true) != 000 ]]
+}
+
+start() {
+  if running; then return 0; fi
+  mkdir -p "$BB_DATA_DIR" "$(dirname "$LOG")"
+  echo "Starting MyFlo on $URL ..."
+  nohup node "$DIST/bb-app.js" --data-dir "$BB_DATA_DIR" \
+    --server-bind-host 127.0.0.1 --server-port "$MYFLO_PORT" \
+    --host-daemon-port "$MYFLO_DAEMON_PORT" --no-in-app-updates --bundled \
+    >>"$LOG" 2>&1 </dev/null &
+  disown || true
+  for _ in $(seq 1 120); do
+    if running; then break; fi
+    sleep 1
+  done
+  running || die "MyFlo did not start within 2 minutes; see $LOG"
+  if [[ ! -f "$BB_DATA_DIR/.myflo-setup-done" ]]; then
+    node "$MYFLO_HOME/kit/setup-workspace.mjs" && touch "$BB_DATA_DIR/.myflo-setup-done" \
+      || echo "myflo: first-run setup will retry next launch (see above)" >&2
+  fi
+}
+
+open_ui() {
+  if command -v open >/dev/null && [[ $(uname) == Darwin ]]; then open "$URL"
+  elif command -v xdg-open >/dev/null; then xdg-open "$URL" >/dev/null 2>&1 || true
+  fi
+  echo "MyFlo is running: $URL"
+}
+
+check() {
+  local label=$1; shift
+  if "$@" >/dev/null 2>&1; then printf '  ok    %s\n' "$label"; else printf '  MISS  %s\n' "$label"; fi
+}
+
+doctor() {
+  echo "MyFlo doctor ($MYFLO_HOME)"
+  check "node $(node --version 2>/dev/null)" node --version
+  check "git" git --version
+  check "MyFlo branding" node "$MYFLO_HOME/kit/brand.mjs" verify --prefix "$MYFLO_HOME/app"
+  check "server on $URL" running
+  check "claude (Claude Code CLI)" command -v claude
+  check "claude signed in" claude auth status
+  check "computer control MCP (peekaboo)" claude mcp get peekaboo
+  check "ego-browser (Ego Lite onboarding done)" command -v ego-browser
+  local peekaboo="$MYFLO_HOME/tools/node_modules/.bin/peekaboo"
+  if [[ -x "$peekaboo" ]]; then
+    echo "Screen Recording / Accessibility (grant both to the app you launch MyFlo from):"
+    "$peekaboo" permissions status 2>&1 | sed 's/^/  /' || true
+  fi
+}
+
+case "${1:-open}" in
+  open) start; open_ui ;;
+  start) start; echo "MyFlo is running: $URL" ;;
+  stop) node "$DIST/bb-app.js" stop ;;
+  restart) node "$DIST/bb-app.js" stop || true; sleep 1; start; open_ui ;;
+  logs) exec tail -n 200 -f "$LOG" ;;
+  doctor) doctor ;;
+  update)
+    curl -fsSL "https://raw.githubusercontent.com/$MYFLO_REPO/$MYFLO_REF/myflo/install.sh" | bash ;;
+  *) exec node "$DIST/bb.js" "$@" ;;
+esac

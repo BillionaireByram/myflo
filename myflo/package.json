@@ -1,0 +1,8 @@
+{
+  "name": "myflo-ide-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "dependencies": {
+    "bb-app": "0.46.1"
+  }
+}

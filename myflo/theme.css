@@ -1,0 +1,17 @@
+/* MyFlo — DigitalFlo palette: near-black, #00A0FF blue, white Inter */
+:root, .dark, .light {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+.dark {
+  --background: #07090c;
+  --foreground: #ffffff;
+  --primary: #00a0ff;
+  --primary-foreground: #ffffff;
+  --accent: #0b1622;
+  --ring: #00a0ff;
+}
+.light {
+  --primary: #00a0ff;
+  --primary-foreground: #ffffff;
+  --ring: #00a0ff;
+}

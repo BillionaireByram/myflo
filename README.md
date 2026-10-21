@@ -1,3 +1,7 @@
+> **MyFlo** — DigitalFlo's fork of bb. Install on a Mac:
+> `curl -fsSL https://raw.githubusercontent.com/BillionaireByram/myflo/myflo/myflo/install.sh | bash`
+> See [myflo/README.md](myflo/README.md). Upstream README follows.
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/e40bda56-54a4-47f8-a417-6bbadf2e5b40">
