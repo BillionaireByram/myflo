@@ -9,7 +9,8 @@
 #   ~/.myflo/tools     Peekaboo, the computer-control MCP server
 #   ~/.myflo/data      your threads, projects and settings
 #   ~/Applications/MyFlo.app and the `myflo` command
-#   Claude Code (if missing), the mac-computer skill, and the Ego Lite browser
+#   Computer control for Claude Code and/or Codex, Flo as an agent in MyFlo, and Ego Lite
+#   (installs Claude Code only if neither Claude Code nor Codex is present)
 set -euo pipefail
 
 MYFLO_HOME="${MYFLO_HOME:-$HOME/.myflo}"
@@ -140,35 +141,54 @@ if $MAC; then
   [[ $sw_major -ge 15 ]] || warn "macOS $sw_major detected; Peekaboo needs macOS 15 (Sequoia) or later"
 fi
 
-if [[ ${MYFLO_SKIP_CLAUDE:-} != 1 ]]; then
-  if ! command -v claude >/dev/null; then
-    step "Installing Claude Code"
-    curl -fsSL https://claude.ai/install.sh | bash
-    export PATH="$HOME/.local/bin:$PATH"
-  fi
-  step "Connecting computer control and the mac-computer skill to Claude Code"
-  PEEKABOO="$MYFLO_HOME/tools/node_modules/.bin/peekaboo"
-  if [[ -x $PEEKABOO ]] && ! claude mcp get peekaboo >/dev/null 2>&1; then
-    claude mcp add --scope user peekaboo -- "$PEEKABOO" mcp
-  fi
-  mkdir -p "$HOME/.claude/skills/mac-computer"
-  cp "$MYFLO_HOME/kit/skills/mac-computer/SKILL.md" "$HOME/.claude/skills/mac-computer/SKILL.md"
+HAS_CLAUDE=false; command -v claude >/dev/null && HAS_CLAUDE=true
+HAS_CODEX=false; command -v codex >/dev/null && HAS_CODEX=true
+if [[ ${MYFLO_SKIP_CLAUDE:-} != 1 ]] && ! $HAS_CLAUDE && ! $HAS_CODEX; then
+  step "Installing Claude Code (no Claude Code or Codex found)"
+  curl -fsSL https://claude.ai/install.sh | bash </dev/null
+  export PATH="$HOME/.local/bin:$PATH"
+  HAS_CLAUDE=true
 fi
+
+step "Connecting computer control and skills to your agents"
+PEEKABOO="$MYFLO_HOME/tools/node_modules/.bin/peekaboo"
+SKILL_DIRS=""
+if $HAS_CLAUDE; then
+  if [[ -x $PEEKABOO ]] && ! claude mcp get peekaboo >/dev/null 2>&1; then
+    claude mcp add --scope user peekaboo -- "$PEEKABOO" mcp </dev/null || warn "could not add Peekaboo to Claude Code"
+  fi
+  SKILL_DIRS="$HOME/.claude/skills"
+fi
+if $HAS_CODEX; then
+  if [[ -x $PEEKABOO ]] && ! codex mcp get peekaboo >/dev/null 2>&1; then
+    codex mcp add peekaboo -- "$PEEKABOO" mcp </dev/null || warn "could not add Peekaboo to Codex"
+  fi
+  SKILL_DIRS="$SKILL_DIRS $HOME/.agents/skills $HOME/.codex/skills"
+fi
+# Flo Agent reads its own skills directory too.
+[[ -d $HOME/.hermes ]] && SKILL_DIRS="$SKILL_DIRS $HOME/.hermes/skills"
+for dir in $SKILL_DIRS; do
+  mkdir -p "$dir/mac-computer"
+  cp "$MYFLO_HOME/kit/skills/mac-computer/SKILL.md" "$dir/mac-computer/SKILL.md"
+done
 
 if $MAC && [[ ${MYFLO_SKIP_EGO:-} != 1 ]]; then
   step "Installing the Ego Lite browser"
-  if curl -fsSL "$EGO_INSTALLER" -o "$TMP/ego-install.sh" && sh "$TMP/ego-install.sh"; then
+  if curl -fsSL "$EGO_INSTALLER" -o "$TMP/ego-install.sh" && sh "$TMP/ego-install.sh" </dev/null; then
     echo "Ego Lite opened. Finish its short setup (say yes to importing Chrome data for your logins)."
   else
     warn "Ego Lite did not install; download it from https://lite.ego.app and open it once"
   fi
-  npx -y skills add citrolabs/ego-lite --global --agent claude-code --skill ego-browser --yes >/dev/null 2>&1 \
+  npx -y skills add citrolabs/ego-lite --global --agent '*' --skill ego-browser --yes </dev/null >/dev/null 2>&1 \
     || warn "the ego-browser skill will be added when Ego Lite finishes its setup"
 fi
 
-if [[ ${MYFLO_SKIP_CLAUDE:-} != 1 ]] && ! claude auth status >/dev/null 2>&1; then
+if [[ ${MYFLO_SKIP_CLAUDE:-} != 1 ]] && $HAS_CLAUDE && ! claude auth status >/dev/null 2>&1; then
   step "Sign in to Claude"
   if ask "Sign in to your Claude account now?"; then claude auth login </dev/tty || warn "run: claude auth login"; fi
+fi
+if ! command -v hermes-acp >/dev/null; then
+  warn "Flo Agent is not installed yet. Install it (step 2), then run: myflo restart"
 fi
 
 step "Starting MyFlo"

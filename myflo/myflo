@@ -43,10 +43,8 @@ start() {
     sleep 1
   done
   running || die "MyFlo did not start within 2 minutes; see $LOG"
-  if [[ ! -f "$BB_DATA_DIR/.myflo-setup-done" ]]; then
-    node "$MYFLO_HOME/kit/setup-workspace.mjs" && touch "$BB_DATA_DIR/.myflo-setup-done" \
-      || echo "myflo: first-run setup will retry next launch (see above)" >&2
-  fi
+  node "$MYFLO_HOME/kit/setup-workspace.mjs" \
+    || echo "myflo: setup will retry next launch (see above)" >&2
 }
 
 open_ui() {
@@ -69,7 +67,11 @@ doctor() {
   check "server on $URL" running
   check "claude (Claude Code CLI)" command -v claude
   check "claude signed in" claude auth status
-  check "computer control MCP (peekaboo)" claude mcp get peekaboo
+  check "computer control in Claude Code (peekaboo)" claude mcp get peekaboo
+  check "codex (Codex CLI)" command -v codex
+  check "computer control in Codex (peekaboo)" codex mcp get peekaboo
+  check "Flo Agent (flo)" command -v flo
+  check "Flo agent bridge (hermes-acp)" test -x "$HOME/.local/bin/hermes-acp"
   check "ego-browser (Ego Lite onboarding done)" command -v ego-browser
   local peekaboo="$MYFLO_HOME/tools/node_modules/.bin/peekaboo"
   if [[ -x "$peekaboo" ]]; then
@@ -82,7 +84,10 @@ case "${1:-open}" in
   open) start; open_ui ;;
   start) start; echo "MyFlo is running: $URL" ;;
   stop) node "$DIST/bb-app.js" stop ;;
-  restart) node "$DIST/bb-app.js" stop || true; sleep 1; start; open_ui ;;
+  restart)
+    node "$DIST/bb-app.js" stop || true
+    for _ in $(seq 1 30); do running || break; sleep 1; done
+    start; open_ui ;;
   logs) exec tail -n 200 -f "$LOG" ;;
   doctor) doctor ;;
   update)
